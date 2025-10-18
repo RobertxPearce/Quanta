@@ -1,0 +1,95 @@
+# Compiled Python files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution and packaging
+.Python
+build/
+develop-eggs/
+dist/
+eggs/
+.eggs/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+*.manifest
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.env/
+.venv_unix/
+.venv_windows/
+
+# Pip-related files
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Conda environment file
+# environment.yml
+
+# Environment variables (ALWAYS ignore)
+.env
+.flaskenv
+
+# Log and database files
+*.log
+*.sqlite
+*.db
+*.out
+*.err
+
+# Data directories
+# Keep directory structure but ignore all large/raw data
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# Model files (trained or serialized)
+models/*.pkl
+models/*.h5
+models/*.joblib
+models/*.pt
+models/*.onnx
+
+# Notebook checkpoints and temporary files
+.ipynb_checkpoints/
+*.ipynb~
+**/.ipynb_checkpoints
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# PyCharm / JetBrains
+.idea/
+*.iml
+
+# macOS
+.DS_Store
+.Trashes
+
+# Windows
+Thumbs.db
+ehthumbs.db
+
+# Temporary or debug files
+*.bak
+*.swp
+*.tmp
+*.temp
+
+# Reports / plots / figures (optional)
+reports/
+figures/
+plots/
+
+# Ignore the file with our secret API key
+config.py

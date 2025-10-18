@@ -1,0 +1,38 @@
+# Core Python Libraries
+numpy
+pandas
+scipy
+
+# Data Visualization
+matplotlib
+seaborn
+plotly
+
+# Machine Learning
+scikit-learn
+xgboost
+tensorflow
+keras
+torch
+torchvision
+torchaudio
+
+# Data Pipeline & Utilities
+flask
+tqdm
+joblib
+requests
+yfinance
+pandas-datareader
+schedule
+
+# Notebook & Environment Tools
+jupyterlab
+notebook
+ipykernel
+ipywidgets
+
+# Time-Series & Forecasting
+statsmodels
+prophet
+
