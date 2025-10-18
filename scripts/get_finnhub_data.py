@@ -22,7 +22,8 @@ def get_market_news(category='general'):
 
     print(f"Fetching news for category: {category}...")
     try:
-        news_articles = finnhub_client.general_news('general', min_id=0)
+        news_articles = finnhub_client.general_news(category, min_id=0)
+
         return news_articles
 
     except Exception as e:
