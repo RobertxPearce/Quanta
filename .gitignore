@@ -86,10 +86,5 @@ ehthumbs.db
 *.tmp
 *.temp
 
-# Reports / plots / figures (optional)
-reports/
-figures/
-plots/
-
 # Ignore the file with our secret API key
 config.py
