@@ -1,10 +1,11 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Title</title>
-</head>
-<body>
-
-</body>
-</html>
+{% extends "base.html" %}
+{% block content %}
+  <h1>Predict</h1>
+  <form method="post">
+    <input type="text" name="input_text" value="{{ user_input or '' }}" placeholder="Type something..." />
+    <button type="submit">Go</button>
+  </form>
+  {% if result is not none %}
+    <p><strong>Result:</strong> {{ result }}</p>
+  {% endif %}
+{% endblock %}
