@@ -36,3 +36,5 @@ ipywidgets
 statsmodels
 prophet
 
+# APIs
+finnhub-python
