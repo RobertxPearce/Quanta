@@ -67,7 +67,7 @@ def predict():
     and displays the top 5 growth stocks.
     """
 
-    from scripts.get_data import get_sp500_data, get_sp500_prices, extract_founding_year, save_data_to_csv
+    from scripts.get_data import get_sp500_data, get_sp500_prices, save_data_to_csv
 
     tickers_list = []  # Full list from scrape
     founded_dict = {}  # Dict {ticker: year} from scrape
