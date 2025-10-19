@@ -1,38 +1,49 @@
+# scripts/get_data.py
+
+import sys
+from pathlib import Path
+from app.utils.config import Config
 import finnhub
 import yfinance as yf
-from app.utils import config
 from datetime import datetime
-from pathlib import Path
 import pandas as pd
 import re
 import requests
 from bs4 import BeautifulSoup
 from io import StringIO  # Needed for reading HTML string with pandas
 
+# Add project root to path (This helps standalone scripts find 'app')
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
 # --- Finnhub Client Initialization ---
 try:
-    # Ensure config.API_KEY is valid
-    if config.API_KEY:
-        finnhub_client = finnhub.Client(api_key=config.API_KEY)
-        # Optional: Add a test call to verify the key immediately
-        # finnhub_client.profile2(symbol='AAPL')
+    # Use the API_KEY attribute from the imported Config object
+    if Config.API_KEY and Config.API_KEY != 'YOUR_FINNHUB_API_KEY':
+        finnhub_client = finnhub.Client(api_key=Config.API_KEY)
         print("Finnhub client initialized successfully.")
     else:
+        # Keep client as None if key is missing/placeholder
         finnhub_client = None
-        print("Warning: Finnhub API_KEY not found in config. Finnhub features disabled.")
+        print("Warning: Finnhub API_KEY is missing or using placeholder. Finnhub features disabled.")
+
 except Exception as e:
+    # Handle the case where the Config import itself fails
     finnhub_client = None
-    print(f"Error initializing Finnhub client: {e}")
+    if "config" in str(e):
+        print("Error initializing Finnhub client: Configuration import failed. Check app/utils/config.py.")
+    else:
+        print(f"Error initializing Finnhub client: {e}")
 
 
 def get_sp500_data():
     """
-    Scrapes StockAnalysis.com for tickers and Wikipedia for founding years.
-    Returns: tuple (list_of_tickers, dict_ticker_to_founded_year) or (None, None).
+    Scrapes StockAnalysis.com for tickers and Wikipedia for founding years and sectors.
+    Returns: tuple (list_of_tickers, dict_ticker_to_founded_year, dict_ticker_to_sector).
     """
     tickers = []
     ticker_to_founded = {}
-    headers = {'User-Agent': 'Mozilla/5.0'}  # Mimic browser
+    ticker_to_sector = {}
+    headers = {'User-Agent': 'Mozilla/5.0'}
 
     # --- Step 1: Scrape Tickers from StockAnalysis.com ---
     print("Fetching S&P 500 tickers from StockAnalysis.com...")
@@ -49,46 +60,64 @@ def get_sp500_data():
         print(f"Fetched {len(tickers)} tickers from StockAnalysis.com.")
     except Exception as e:
         print(f"Error scraping StockAnalysis.com: {e}")
-        return None, None  # Cannot proceed without tickers
+        # Return all Nones/Empties immediately on critical failure
+        return None, None, None  # <-- RETURN 3 ITEMS
 
-    # --- Step 2: Scrape Founding Years from Wikipedia ---
-    print("Fetching founding years from Wikipedia...")
+    # --- Step 2: Scrape Founding Years and SECTORS from Wikipedia ---
+    print("Fetching founding years and sectors from Wikipedia...")
+    wiki_data = {}  # Initialize outside the try block
+
     try:
         url_wiki = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
         response_wiki = requests.get(url_wiki, headers=headers, timeout=15)
-        response_wiki.raise_for_status()  # Check for HTTP errors (like 403)
+        response_wiki.raise_for_status()
         soup = BeautifulSoup(response_wiki.text, 'html.parser')
-        table_wiki = soup.find('table', {'id': 'constituents'}) or soup.find('table', {
-            'class': 'wikitable sortable'})  # Find table
+        table_wiki = soup.find('table', {'id': 'constituents'}) or soup.find('table', {'class': 'wikitable sortable'})
         if not table_wiki: raise ValueError("Could not find S&P table on Wikipedia")
 
-        wiki_data = {}
-        for row in table_wiki.find_all('tr')[1:]:  # Skip header
+        for row in table_wiki.find_all('tr')[1:]:
             columns = row.find_all('td')
-            if len(columns) > 7:  # Check expected columns
+            # Check for minimum required columns
+            if len(columns) > 7:
                 try:
                     wiki_ticker = columns[0].text.strip()
-                    founded_info = columns[7].text.strip()  # Index 7 = 'Founded' (VERIFY)
                     cleaned_wiki_ticker = str(wiki_ticker).strip().replace('.', '-')
-                    match = re.search(r'\b(\d{4})\b', founded_info)  # Extract 4-digit year
+
+                    # EXTRACT SECTOR (Index 3 is typically the GICS Sector column)
+                    sector_info = columns[3].text.strip()
+
+                    # EXTRACT FOUNDED YEAR (Index 7)
+                    founded_info = columns[7].text.strip()
+                    match = re.search(r'\b(\d{4})\b', founded_info)
                     cleaned_founded = match.group(1) if match else "N/A"
-                    wiki_data[cleaned_wiki_ticker] = cleaned_founded
+
+                    wiki_data[cleaned_wiki_ticker] = {
+                        'founded': cleaned_founded,
+                        'sector': sector_info.lower().split()[0].replace(',', '').strip()
+                    }
                 except IndexError:
-                    continue  # Skip row if not enough columns
+                    # Skip row if the expected column index is missing (e.g., Index 3 or 7)
+                    continue
 
-        # --- Step 3: Merge ---
-        for ticker in tickers:
-            ticker_to_founded[ticker] = wiki_data.get(ticker, "N/A")  # Default to N/A
-        print(f"Matched founding years for {len([y for y in ticker_to_founded.values() if y != 'N/A'])} tickers.")
-
-    except requests.exceptions.RequestException as req_err:
-        print(f"HTTP Error fetching Wikipedia: {req_err}. Founding years unavailable.")
-        ticker_to_founded = {ticker: "N/A" for ticker in tickers}  # Set all to N/A
     except Exception as e:
-        print(f"Error scraping Wikipedia: {e}. Founding years unavailable.")
-        ticker_to_founded = {ticker: "N/A" for ticker in tickers}  # Set all to N/A
+        # Catch any failure during Step 2 (e.g., HTTP error on Wikipedia)
+        print(f"Error during Wikipedia scrape (Step 2): {e}. Proceeding with only data from Step 1.")
+        # wiki_data remains empty {} and is handled gracefully in Step 3.
 
-    return tickers, ticker_to_founded  # Return list and dict
+    # --- Step 3: Merge and Consolidate Data (Executed regardless of Step 2's success) ---
+    for ticker in tickers:
+        # Use wiki_data.get() to safely pull data, defaulting if it wasn't found in Step 2
+        data = wiki_data.get(ticker, {'founded': "N/A", 'sector': "unknown"})
+
+        # Populate the final dictionaries
+        ticker_to_founded[ticker] = data['founded']
+        ticker_to_sector[ticker] = data['sector']
+
+    print(f"Matched founding years for {len([y for y in ticker_to_founded.values() if y != 'N/A'])} tickers.")
+    print(f"Fetched sectors for {len([s for s in ticker_to_sector.values() if s != 'unknown'])} tickers.")
+
+    # --- FINAL RETURN ---
+    return tickers, ticker_to_founded, ticker_to_sector
 
 
 def get_sp500_prices(start="2015-01-01", tickers=None, auto_adjust=True):
@@ -96,12 +125,12 @@ def get_sp500_prices(start="2015-01-01", tickers=None, auto_adjust=True):
     try:
         if tickers is None:
             print("Tickers not provided to get_sp500_prices, fetching using get_sp500_data...")
-            # Call the NEW scraping function if tickers aren't provided
-            tickers_list, _ = get_sp500_data()  # We only need the list of tickers here
+            # Note the function now returns 3 items, so we need to unpack them correctly
+            tickers_list, _, _ = get_sp500_data()
             if not tickers_list:
                 print("Failed to fetch tickers list in get_sp500_prices fallback.")
                 return None
-            tickers = tickers_list  # Use the fetched list
+            tickers = tickers_list
 
         # Ensure tickers list contains only strings
         yahoo_tickers = [str(t) for t in tickers]
@@ -188,6 +217,45 @@ def _to_yahoo_symbols(tickers):
     return [str(t).replace(".", "-") for t in tickers]
 
 
+def get_latest_csv_path(directory: Path, pattern: str = "*.csv"):
+    """ Finds the most recently created CSV file matching a pattern in a directory. """
+    try:
+        # Check if the directory exists, return None if not
+        if not directory.is_dir():
+            print(f"Warning: Directory not found at {directory}")
+            return None
+
+        # Sort files by last modification time (mtime), descending
+        list_of_files = sorted(directory.glob(pattern), key=lambda x: x.stat().st_mtime, reverse=True)
+
+        if list_of_files:
+            return list_of_files[0]
+        else:
+            print(f"Warning: No files matching '{pattern}' found in {directory}")
+            return None
+    except Exception as e:
+        print(f"Error finding latest CSV: {e}")
+        return None
+
+
+def get_ticker_sectors(tickers: list) -> dict:
+    """
+    Retrieves sector data from the recently scraped Wikipedia list
+    for the provided tickers. (Replaces the Finnhub API call).
+    """
+    print("Retrieving S&P 500 sector data from scraped cache (API-Free)...")
+
+    # We call the main scraping function to ensure we get the latest sector data.
+    # We ignore the founded dict return (_) since we only need the sectors
+    tickers_list, _, ticker_to_sector_all = get_sp500_data()
+
+    if not tickers_list:
+        return {}  # Scrape failed
+
+    # Return a filtered dictionary containing only the requested tickers
+    return {ticker: ticker_to_sector_all.get(ticker, 'unknown') for ticker in tickers}
+
+
 # --- Main execution block (Updated Test) ---
 if __name__ == "__main__":
     # Define parameters
@@ -200,7 +268,8 @@ if __name__ == "__main__":
 
     print("--- Testing get_sp500_data() ---")
     # Call the combined function
-    tickers_list, founded_dict = get_sp500_data()
+    # Note: Unpack three return values here
+    tickers_list, founded_dict, sector_dict = get_sp500_data()
 
     if tickers_list and founded_dict is not None:  # Check founded_dict existence
         print(f"\nFetched {len(tickers_list)} tickers.")
@@ -209,6 +278,11 @@ if __name__ == "__main__":
         for ticker in tickers_list[:5]:
             # Use .get() for safe dictionary access
             print(f" - {ticker}: {founded_dict.get(ticker, 'N/A')}")
+
+        # Print sector data for verification
+        print("Sample Sectors (from Wikipedia scrape):")
+        for ticker in tickers_list[:5]:
+            print(f" - {ticker}: {sector_dict.get(ticker, 'unknown')}")
 
         print("\n--- Testing get_sp500_prices() ---")
         # Use a smaller sample for the main block test to be faster

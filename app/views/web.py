@@ -1,14 +1,14 @@
 """
 Handles all web page routes for Quanta
 """
-from flask import Blueprint, render_template, request
+from flask import Blueprint, render_template, jsonify, request
 from app.ml.infer import run_inference
-# Ensure you import save_data_to_csv from get_data
-from scripts.get_data import get_market_news, get_sp500_data, get_sp500_prices, extract_founding_year, save_data_to_csv
+
 from scripts.polarity_analysis import get_sentiment_score
 from datetime import datetime, timedelta
 import pandas as pd
 import yfinance as yf
+
 # Import Path for robust path handling
 from pathlib import Path
 
@@ -17,13 +17,46 @@ web = Blueprint('web', __name__)
 
 @web.route('/')
 def index():
-    # ... (omitted for brevity - no changes needed here) ...
+    """
+    Render the homepage (index.html), fetch market news, calculate sentiment,
+    and save the results to a CSV file for training.
+    """
+
+    from scripts.get_data import get_market_news, save_data_to_csv
+
+    # --- 1. Define paths for saving news data ---
+    NEWS_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "raw" / "news"
+    NEWS_BASE_FILENAME = "market_news_sentiment"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    NEWS_FILENAME = f"{NEWS_BASE_FILENAME}_{timestamp}.csv"
+
     news_list = get_market_news('general')
 
     if news_list:
+        # --- 2. Calculate Sentiment and Store ---
         for article in news_list:
+            # article is a dict containing 'headline', 'summary', 'url', 'datetime', etc.
             text_to_analyze = article['headline'] + " " + article['summary']
+            # Add the sentiment score directly to the article dictionary
             article['sentiment'] = get_sentiment_score(text_to_analyze)
+
+        # --- 3. Convert List of Dictionaries to DataFrame ---
+        # The list contains all the necessary fields, including the new 'sentiment'
+        news_df = pd.DataFrame(news_list)
+
+        # --- 4. Select/Rename relevant columns for ML and Save ---
+        # Keep relevant columns like 'headline', 'summary', 'datetime', and 'sentiment'
+        # Convert Finnhub timestamp (seconds) to datetime
+        if 'datetime' in news_df.columns:
+            news_df['datetime'] = pd.to_datetime(news_df['datetime'], unit='s')
+            news_df.set_index('datetime', inplace=True)  # Use datetime as the index
+
+        # Explicitly select columns you want to save
+        columns_to_save = ['headline', 'summary', 'source', 'sentiment']
+        news_df_to_save = news_df[[col for col in columns_to_save if col in news_df.columns]]
+
+        # Call the saving function
+        save_data_to_csv(news_df_to_save, filename=NEWS_FILENAME, directory=NEWS_DATA_DIR)
 
     return render_template("index.html", title='Home', articles=news_list)
 
@@ -33,7 +66,9 @@ def predict():
     Fetches S&P 500 tickers and founding years, calculates growth for a sample,
     and displays the top 5 growth stocks.
     """
-    # ... (omitted for brevity - variable initialization) ...
+
+    from scripts.get_data import get_sp500_data, get_sp500_prices, extract_founding_year, save_data_to_csv
+
     tickers_list = []  # Full list from scrape
     founded_dict = {}  # Dict {ticker: year} from scrape
     price_table_html = None  # Optional: HTML table of recent prices
@@ -55,7 +90,7 @@ def predict():
     PRICE_FILENAME = f"{BASE_FILENAME}_{timestamp}.csv"
 
     print("Fetching S&P data (Tickers from SA, Founded from Wiki)...")
-    tickers_list, founded_dict = get_sp500_data() # Calls the combined scraping function
+    tickers_list, founded_dict, sector_dict = get_sp500_data()
 
     if not tickers_list:
         print("Error: Failed to fetch S&P ticker list. Cannot proceed.")
