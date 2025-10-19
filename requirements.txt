@@ -16,6 +16,7 @@ keras
 torch
 torchvision
 torchaudio
+vaderSentiment
 
 # Data Pipeline & Utilities
 flask
